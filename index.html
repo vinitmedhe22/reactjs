@@ -14,23 +14,68 @@
     body {
       font-family: 'Segoe UI', sans-serif;
       background: linear-gradient(135deg, #2c3e50, #3498db);
-      height: 100vh;
+      min-height: 100vh;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
+      padding: 20px;
+      color: white;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .game-container {
+      text-align: center;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+      font-size: 1.2rem;
+    }
+
+    .difficulty {
+      margin-bottom: 20px;
+    }
+
+    .difficulty button {
+      padding: 10px 20px;
+      margin: 0 5px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      background: #ecf0f1;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .difficulty button:hover {
+      background: #bdc3c7;
+    }
+
+    .difficulty button.active {
+      background: #27ae60;
+      color: white;
     }
 
     .game-board {
-      width: 640px;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
       gap: 15px;
+      max-width: 960px;
+      margin: 0 auto;
     }
 
     .card {
       position: relative;
-      width: 140px;
-      height: 140px;
+      width: 120px;
+      height: 120px;
       perspective: 1000px;
       cursor: pointer;
     }
@@ -67,6 +112,7 @@
 
     .card-back {
       background: #34495e;
+      background: linear-gradient(45deg, #34495e, #2c3e50);
     }
 
     .matched .card-inner {
@@ -78,20 +124,93 @@
       50% { transform: scale(1.2) rotateZ(5deg); }
       100% { transform: scale(0.95); }
     }
+
+    #message {
+      display: none;
+      text-align: center;
+      font-size: 2rem;
+      margin-top: 20px;
+      animation: fadeIn 0.5s;
+    }
+
+    #message button {
+      padding: 10px 20px;
+      margin-top: 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      background: #27ae60;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    #message button:hover {
+      background: #219653;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @media (max-width: 768px) {
+      .card { width: 80px; height: 80px; }
+      .game-board { gap: 10px; }
+      h1 { font-size: 2rem; }
+      .stats { font-size: 1rem; }
+    }
   </style>
 </head>
 <body>
-  <div class="game-board" id="gameBoard"></div>
+  <div class="game-container">
+    <h1>Memory Card Flip Game</h1>
+    <div class="difficulty">
+      <button onclick="setDifficulty('easy')" class="active">Easy (4x2)</button>
+      <button onclick="setDifficulty('medium')">Medium (4x4)</button>
+      <button onclick="setDifficulty('hard')">Hard (6x4)</button>
+    </div>
+    <div class="stats">
+      <span>Moves: <span id="moves">0</span></span>
+      <span>Time: <span id="timer">0s</span></span>
+      <span>Score: <span id="score">0</span></span>
+      <span>Best Score: <span id="bestScore">0</span></span>
+    </div>
+    <div class="game-board" id="gameBoard"></div>
+    <div id="message">
+      🎉 You Won!<br>
+      Score: <span id="finalScore"></span><br>
+      <button onclick="restartGame()">Restart</button>
+    </div>
+  </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script>
     const board = document.getElementById('gameBoard');
-    const emojis = ['🍎', '🍌', '🍓', '🍉', '🍇', '🍒', '🍍', '🥝'];
-    let cardArray = [...emojis, ...emojis];
+    const message = document.getElementById('message');
+    const movesDisplay = document.getElementById('moves');
+    const timerDisplay = document.getElementById('timer');
+    const scoreDisplay = document.getElementById('score');
+    const bestScoreDisplay = document.getElementById('bestScore');
+    const finalScoreDisplay = document.getElementById('finalScore');
+    const emojis = ['🍎', '🍌', '🍓', '🍉', '🍇', '🍒', '🍍', '🥝', '🍊', '🍋', '🍈', '🥭'];
+    let cardArray = [];
     let flippedCards = [];
     let lockBoard = false;
+    let moves = 0;
+    let time = 0;
+    let score = 0;
+    let timerInterval;
+    let difficulty = 'easy';
+    let difficultySettings = {
+      easy: { rows: 2, cols: 4, pairs: 4 },
+      medium: { rows: 4, cols: 4, pairs: 8 },
+      hard: { rows: 4, cols: 6, pairs: 12 }
+    };
 
-    // Shuffle the cards
-    cardArray.sort(() => 0.5 - Math.random());
+    function shuffle(array) {
+      return array.sort(() => 0.5 - Math.random());
+    }
 
     function createCard(emoji) {
       const card = document.createElement('div');
@@ -109,6 +228,9 @@
 
         card.classList.add('flipped');
         flippedCards.push(card);
+        moves++;
+        movesDisplay.textContent = moves;
+        updateScore();
 
         if (flippedCards.length === 2) {
           lockBoard = true;
@@ -125,6 +247,7 @@
       if (card1.dataset.emoji === card2.dataset.emoji) {
         card1.classList.add('matched');
         card2.classList.add('matched');
+        checkWin();
       } else {
         setTimeout(() => {
           card1.classList.remove('flipped');
@@ -135,89 +258,88 @@
       flippedCards = [];
       setTimeout(() => lockBoard = false, 1000);
     }
-<div class="game-board" id="gameBoard"></div>
-<div id="message" style="display:none; text-align:center; color:white; font-size:2rem; margin-top:20px;">
-  🎉 You Won! <br><button onclick="restartGame()" style="margin-top:10px; padding:10px 20px; font-size:1rem;">Restart</button>
-</div>
 
-<script>
-  const board = document.getElementById('gameBoard');
-  const message = document.getElementById('message');
-  const emojis = ['🍎', '🍌', '🍓', '🍉', '🍇', '🍒', '🍍', '🥝'];
-  let cardArray = [...emojis, ...emojis];
-  let flippedCards = [];
-  let lockBoard = false;
-
-  function shuffle(array) {
-    return array.sort(() => 0.5 - Math.random());
-  }
-
-  function createCard(emoji) {
-    const card = document.createElement('div');
-    card.classList.add('card');
-    card.innerHTML = `
-      <div class="card-inner">
-        <div class="card-front">${emoji}</div>
-        <div class="card-back"></div>
-      </div>
-    `;
-    card.dataset.emoji = emoji;
-
-    card.addEventListener('click', () => {
-      if (lockBoard || card.classList.contains('flipped') || card.classList.contains('matched')) return;
-
-      card.classList.add('flipped');
-      flippedCards.push(card);
-
-      if (flippedCards.length === 2) {
-        lockBoard = true;
-        checkForMatch();
+    function checkWin() {
+      const matchedCards = document.querySelectorAll('.matched');
+      if (matchedCards.length === cardArray.length) {
+        clearInterval(timerInterval);
+        const finalScore = calculateScore();
+        finalScoreDisplay.textContent = finalScore;
+        message.style.display = 'block';
+        updateBestScore(finalScore);
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
       }
-    });
+    }
 
-    board.appendChild(card);
-  }
+    function updateScore() {
+      const baseScore = difficultySettings[difficulty].pairs * 100;
+      const movePenalty = moves * 10;
+      const timePenalty = time * 2;
+      score = Math.max(0, baseScore - movePenalty - timePenalty);
+      scoreDisplay.textContent = score;
+    }
 
-  function checkForMatch() {
-    const [card1, card2] = flippedCards;
+    function calculateScore() {
+      return score;
+    }
 
-    if (card1.dataset.emoji === card2.dataset.emoji) {
-      card1.classList.add('matched');
-      card2.classList.add('matched');
-      checkWin();
-    } else {
-      setTimeout(() => {
-        card1.classList.remove('flipped');
-        card2.classList.remove('flipped');
+    function updateBestScore(finalScore) {
+      const key = `bestScore_${difficulty}`;
+      const bestScore = parseInt(localStorage.getItem(key) || '0');
+      if (finalScore > bestScore) {
+        localStorage.setItem(key, finalScore);
+        bestScoreDisplay.textContent = finalScore;
+      }
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      time = 0;
+      timerDisplay.textContent = '0s';
+      timerInterval = setInterval(() => {
+        time++;
+        timerDisplay.textContent = `${time}s`;
+        updateScore();
       }, 1000);
     }
 
-    flippedCards = [];
-    setTimeout(() => lockBoard = false, 1000);
-  }
-
-  function checkWin() {
-    const matchedCards = document.querySelectorAll('.matched');
-    if (matchedCards.length === cardArray.length) {
-      setTimeout(() => {
-        message.style.display = 'block';
-      }, 500);
+    function setDifficulty(level) {
+      difficulty = level;
+      document.querySelectorAll('.difficulty button').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.includes(level.charAt(0).toUpperCase() + level.slice(1)));
+      });
+      restartGame();
     }
-  }
 
-  function restartGame() {
-    board.innerHTML = '';
-    message.style.display = 'none';
-    flippedCards = [];
-    lockBoard = false;
-    cardArray = shuffle([...emojis, ...emojis]);
-    cardArray.forEach(createCard);
-  }
+    function restartGame() {
+      board.innerHTML = '';
+      message.style.display = 'none';
+      flippedCards = [];
+      lockBoard = false;
+      moves = 0;
+      movesDisplay.textContent = moves;
+      score = 0;
+      scoreDisplay.textContent = score;
 
-  restartGame(); // initial start
-</script>
+      const { rows, cols, pairs } = difficultySettings[difficulty];
+      board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      board.style.maxWidth = `${cols * 135}px`;
 
-    cardArray.forEach(createCard);
+      cardArray = shuffle([...emojis.slice(0, pairs), ...emojis.slice(0, pairs)]);
+      cardArray.forEach(createCard);
+
+      const bestScore = localStorage.getItem(`bestScore_${difficulty}`) || '0';
+      bestScoreDisplay.textContent = bestScore;
+
+      startTimer();
+    }
+
+    // Initial start
+    restartGame();
   </script>
 </body>
 </html>
